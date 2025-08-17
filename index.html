@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alpha–Beta Pruning: Ordering Experiment (Part 2)</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111a2d;
+      --ink: #e8eefc;
+      --muted: #9fb2d9;
+      --accent: #6aa6ff;
+      --good: #4cd885;
+      --warn: #ffcf5a;
+      --pruned: #64748b;
+      --edge: #27324a;
+      --active: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; color: var(--ink); background: radial-gradient(1200px 800px at 70% -10%, #12213f 0%, #0b1220 60%); }
+
+    header {
+      padding: 18px 22px; display: flex; gap: 14px; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.02); border-bottom: 1px solid rgba(255,255,255,0.05);
+      position: sticky; top: 0; backdrop-filter: blur(6px);
+    }
+    h1 { font-size: 18px; margin: 0; color: var(--ink); font-weight: 700; letter-spacing: .2px; }
+
+    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    button { cursor: pointer; border: 1px solid rgba(255,255,255,.12); background: var(--panel); color: var(--ink); padding: 8px 12px; border-radius: 12px; font-weight: 600; transition: transform .05s ease, background .2s ease, border-color .2s ease; }
+    button:hover { background: #1a2540; }
+    button:active { transform: translateY(1px); }
+    button.primary { border-color: rgba(106,166,255,.5); box-shadow: 0 0 0 2px rgba(106,166,255,.15) inset; }
+    button.ghost { background: transparent; }
+
+    .badge { font-size: 12px; padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.15); color: var(--muted); }
+
+    .layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 18px; }
+
+    .panel { background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.02)); border: 1px solid rgba(255,255,255,.07); border-radius: 16px; padding: 14px; }
+
+    .sidebar { display: grid; gap: 10px; align-content: start; }
+
+    .kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; border-top: 1px dashed rgba(255,255,255,.1); padding-top: 10px; margin-top: 6px; }
+    .kv .value { font-feature-settings: "tnum" 1, "ss01" 1; letter-spacing: .3px; }
+
+    .legend { display: grid; grid-template-columns: 16px 1fr; gap: 8px 10px; font-size: 13px; color: var(--muted); }
+    .dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 2px; }
+    .dot.v { background: var(--accent); }
+    .dot.p { background: var(--pruned); }
+    .dot.a { background: var(--good); }
+
+    svg { width: 100%; height: auto; border-radius: 16px; display: block; background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.06); }
+
+    .node { transition: transform .2s ease; }
+    .node circle { fill: #0f172a; stroke: var(--edge); stroke-width: 2; }
+    .node text { font-weight: 700; fill: var(--ink); }
+    .leaf .value { font-size: 12px; fill: var(--muted); font-weight: 700; }
+
+    .edge { stroke: var(--edge); stroke-width: 2; }
+    .edge.pruned { stroke: var(--pruned); stroke-dasharray: 4 4; opacity: .85; }
+    .edge.visited { stroke: var(--accent); stroke-width: 3; }
+
+    .node.visited circle { stroke: var(--accent); filter: drop-shadow(0 0 6px rgba(106,166,255,.35)); }
+    .node.active circle { stroke: var(--active); stroke-width: 3; }
+    .node.pruned circle { stroke: var(--pruned); opacity: .8; }
+
+    .subtle { color: var(--muted); font-size: 13px; }
+    .alpha, .beta { font-size: 12px; color: var(--muted); }
+
+    .footer { padding: 10px 18px 26px; color: var(--muted); font-size: 12px; text-align: center; }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Alpha–Beta Pruning • Ordering Experiment (Part 2)</h1>
+    <div class="controls">
+      <span class="badge">Choose ordering:</span>
+      <button class="scenario" data-s="worst" onclick="setOrder('worst')">Worst Order</button>
+      <button class="scenario" data-s="random" onclick="setOrder('random')">Random Order</button>
+      <button class="scenario" data-s="best" onclick="setOrder('best')">Best Order</button>
+      <span class="badge">Run:</span>
+      <button id="run" class="primary">▶ Play</button>
+      <button id="step">⏭ Step</button>
+      <button id="reset" class="ghost">↺ Reset</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="panel sidebar">
+      <div>
+        <div class="subtle">Scenario</div>
+        <div id="scenarioName" class="value" style="font-weight:700">Best Order</div>
+      </div>
+
+      <div class="kv">
+        <div class="subtle">Leaves evaluated</div>
+        <div class="value" id="leavesEval">0</div>
+        <div class="subtle">Leaves pruned</div>
+        <div class="value" id="leavesPruned">0</div>
+        <div class="subtle">Internal nodes visited</div>
+        <div class="value" id="internalVisited">0</div>
+        <div class="subtle">Root value</div>
+        <div class="value" id="rootValue">—</div>
+      </div>
+
+      <div>
+        <div class="subtle" style="margin-bottom:6px">Legend</div>
+        <div class="legend">
+          <div class="dot v"></div><div>Visited</div>
+          <div class="dot p"></div><div>Pruned</div>
+          <div class="dot a"></div><div>Active step</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="subtle" style="margin:10px 0 6px">Current α / β</div>
+        <div class="alpha">α (root / MAX): <span id="alpha">-∞</span></div>
+        <div class="beta">β (current MIN): <span id="beta">+∞</span></div>
+      </div>
+
+      <div>
+        <div class="subtle" style="margin:10px 0 6px">Tip</div>
+        <div class="subtle">Best order aims to find a strong value early at MAX (high α), then early low values at MIN nodes (low β), triggering β ≤ α cutoffs.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <!-- SVG Tree -->
+      <svg id="tree" viewBox="0 0 900 500">
+        <!-- Edges -->
+        <g id="edges" stroke-linecap="round">
+          <!-- Root to MIN -->
+          <line id="e-R-A" class="edge" x1="450" y1="80" x2="250" y2="200" />
+          <line id="e-R-B" class="edge" x1="450" y1="80" x2="450" y2="200" />
+          <line id="e-R-C" class="edge" x1="450" y1="80" x2="650" y2="200" />
+          <!-- A to leaves -->
+          <line id="e-A-A1" class="edge" x1="250" y1="200" x2="175" y2="350" />
+          <line id="e-A-A2" class="edge" x1="250" y1="200" x2="250" y2="350" />
+          <line id="e-A-A3" class="edge" x1="250" y1="200" x2="325" y2="350" />
+          <!-- B to leaves -->
+          <line id="e-B-B1" class="edge" x1="450" y1="200" x2="375" y2="350" />
+          <line id="e-B-B2" class="edge" x1="450" y1="200" x2="450" y2="350" />
+          <line id="e-B-B3" class="edge" x1="450" y1="200" x2="525" y2="350" />
+          <!-- C to leaves -->
+          <line id="e-C-C1" class="edge" x1="650" y1="200" x2="575" y2="350" />
+          <line id="e-C-C2" class="edge" x1="650" y1="200" x2="650" y2="350" />
+          <line id="e-C-C3" class="edge" x1="650" y1="200" x2="725" y2="350" />
+        </g>
+
+        <!-- Nodes -->
+        <g id="nodes">
+          <!-- Root MAX -->
+          <g id="R" class="node" transform="translate(450,80)">
+            <circle r="22" />
+            <text text-anchor="middle" dominant-baseline="middle">MAX</text>
+          </g>
+
+          <!-- MIN level -->
+          <g id="A" class="node" transform="translate(250,200)">
+            <circle r="24" />
+            <text text-anchor="middle" dominant-baseline="middle">A_MIN</text>
+          </g>
+          <g id="B" class="node" transform="translate(450,200)">
+            <circle r="24" />
+            <text text-anchor="middle" dominant-baseline="middle">B_MIN</text>
+          </g>
+          <g id="C" class="node" transform="translate(650,200)">
+            <circle r="24" />
+            <text text-anchor="middle" dominant-baseline="middle">C_MIN</text>
+          </g>
+
+          <!-- Leaves under A (values 3,5,6) -->
+          <g id="A1" class="node leaf" transform="translate(175,350)">
+            <circle r="18" />
+            <text id="A1-text" class="value" text-anchor="middle" y="4">3</text>
+          </g>
+          <g id="A2" class="node leaf" transform="translate(250,350)">
+            <circle r="18" />
+            <text id="A2-text" class="value" text-anchor="middle" y="4">5</text>
+          </g>
+          <g id="A3" class="node leaf" transform="translate(325,350)">
+            <circle r="18" />
+            <text id="A3-text" class="value" text-anchor="middle" y="4">6</text>
+          </g>
+
+          <!-- Leaves under B (values 1,2,9) -->
+          <g id="B1" class="node leaf" transform="translate(375,350)">
+            <circle r="18" />
+            <text id="B1-text" class="value" text-anchor="middle" y="4">1</text>
+          </g>
+          <g id="B2" class="node leaf" transform="translate(450,350)">
+            <circle r="18" />
+            <text id="B2-text" class="value" text-anchor="middle" y="4">2</text>
+          </g>
+          <g id="B3" class="node leaf" transform="translate(525,350)">
+            <circle r="18" />
+            <text id="B3-text" class="value" text-anchor="middle" y="4">9</text>
+          </g>
+
+          <!-- Leaves under C (values 0,7,8) -->
+          <g id="C1" class="node leaf" transform="translate(575,350)">
+            <circle r="18" />
+            <text id="C1-text" class="value" text-anchor="middle" y="4">0</text>
+          </g>
+          <g id="C2" class="node leaf" transform="translate(650,350)">
+            <circle r="18" />
+            <text id="C2-text" class="value" text-anchor="middle" y="4">7</text>
+          </g>
+          <g id="C3" class="node leaf" transform="translate(725,350)">
+            <circle r="18" />
+            <text id="C3-text" class="value" text-anchor="middle" y="4">8</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="footer">Part 2 • Try different orderings to see how α–β pruning changes how many leaves must be evaluated.</div>
+
+  <script>
+    // ----- Data model -----
+
+    
+
+    // Predefined scenarios (child order + leaf order per MIN)
+    const scenarios = {
+      best: {
+        name: 'Best Order',
+        childOrder: ['A','B','C'],
+        leafOrder: { A:['A1','A2','A3'], B:['B1','B2','B3'], C:['C1','C2','C3'] }
+      },
+      random: {
+        name: 'Random Order',
+        childOrder: ['A','B','C'],
+        leafOrder: { A:['A1','A2','A3'], B:['B1','B2','B3'], C:['C1','C2','C3'] }
+      },
+      worst: {
+        name: 'Worst Order',
+        childOrder: ['C','B','A'],
+        leafOrder: { A:['A1','A2','A3'], B:['B1','B2','B3'], C:['C1','C2','C3'] }
+      }
+    };
+
+    // ----- DOM helpers -----
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+    function resetVisuals() {
+      $$('#edges .edge').forEach(e=>{ e.classList.remove('visited','pruned'); });
+      $$('#nodes .node').forEach(n=>{ n.classList.remove('visited','pruned','active'); });
+      $('#leavesEval').textContent = '0';
+      $('#leavesPruned').textContent = '0';
+      $('#internalVisited').textContent = '0';
+      $('#rootValue').textContent = '—';
+      $('#alpha').textContent = '-∞';
+      $('#beta').textContent = '+∞';
+    }
+
+    function setOrder(type) {
+        console.log(type);
+        const a1 = document.getElementById("A1-text");
+        const a2 = document.getElementById("A2-text"); 
+        const a3 = document.getElementById("A3-text");
+        const b1 = document.getElementById("B1-text");
+        const b2 = document.getElementById("B2-text");
+        const b3 = document.getElementById("B3-text");
+        const c1 = document.getElementById("C1-text");
+        const c2 = document.getElementById("C2-text");
+        const c3 = document.getElementById("C3-text");
+        
+        if(type === 'best') {
+            a1.innerHTML = '3';
+            a2.innerHTML = '5'; 
+            a3.innerHTML = '6'; 
+            b1.innerHTML = '1'; 
+            b2.innerHTML = '2'; 
+            b3.innerHTML = '9';
+            c1.innerHTML = '0';
+            c2.innerHTML = '7';
+            c3.innerHTML = '8';
+        } else if(type === 'random') {
+            a1.innerHTML = '5';
+            a2.innerHTML = '3'; 
+            a3.innerHTML = '6'; 
+            b1.innerHTML = '2'; 
+            b2.innerHTML = '9'; 
+            b3.innerHTML = '1';
+            c1.innerHTML = '8';
+            c2.innerHTML = '7';
+            c3.innerHTML = '0';
+        } else if(type === 'worst') {
+            a1.innerHTML = '6';
+            a2.innerHTML = '5'; 
+            a3.innerHTML = '3'; 
+            b1.innerHTML = '9'; 
+            b2.innerHTML = '2'; 
+            b3.innerHTML = '1';
+            c1.innerHTML = '8';
+            c2.innerHTML = '7';
+            c3.innerHTML = '0'; 
+        }
+    }
+
+    function markVisited(nodeId) {
+      const n = document.getElementById(nodeId);
+      if (!n) return;
+      n.classList.add('visited');
+    }
+    function markActive(nodeId) {
+      const n = document.getElementById(nodeId);
+      if (!n) return;
+      n.classList.add('active');
+      setTimeout(()=> n.classList.remove('active'), 600);
+    }
+    function visitEdge(from,to) {
+      const e = document.getElementById(`e-${from}-${to}`);
+      if (!e) return; e.classList.add('visited');
+    }
+    function pruneEdge(from,to) {
+      const e = document.getElementById(`e-${from}-${to}`);
+      if (!e) return; e.classList.add('pruned');
+    }
+    function pruneNode(id) {
+      const n = document.getElementById(id); if (!n) return; n.classList.add('pruned');
+    }
+
+    function setAlpha(v) { $('#alpha').textContent = v === -Infinity ? '-∞' : String(v); }
+    function setBeta(v) { $('#beta').textContent = v === Infinity ? '+∞' : String(v); }
+
+    function inc(id) { const el=$("#"+id); el.textContent = String( (parseInt(el.textContent)||0) + 1 ); }
+    function addBy(id, k) { const el=$("#"+id); el.textContent = String( (parseInt(el.textContent)||0) + k ); }
+
+    // ----- Simulation planner (produces a list of visual steps) -----
+    function planSteps(scn) {
+      console.log(scn);
+      let values;
+      if(scn.name === "Best Order") {
+        values = { A1:3, A2:5, A3:6, B1:1, B2:2, B3:9, C1:0, C2:7, C3:8 };
+      } else if(scn.name === "Random Order") {
+        values = { A1:5, A2:3, A3:6, B1:2, B2:9, B3:1, C1:8, C2:7, C3:0 };
+      } else {
+        values = { A1:6, A2:5, A3:3, B1:9, B2:2, B3:1, C1:8, C2:7, C3:0 };
+      }
+      const steps = [];
+      // Enter root
+      steps.push({t:'visitNode', id:'R'});
+      steps.push({t:'setAlpha', v:-Infinity});
+      steps.push({t:'setBeta', v:Infinity});
+      let alpha = -Infinity;
+      let leavesVisited = 0;
+      let leavesPruned = 0;
+      let internalVisited = 1; // root
+      scn.childOrder = ['A', 'B', 'C'];
+      console.log(scn.childOrder);
+      scn.childOrder.forEach(child => {
+        // Enter MIN child
+        steps.push({t:'edge', from:'R', to:child});
+        steps.push({t:'visitNode', id:child});
+        steps.push({t:'active', id:child});
+        internalVisited++;
+        let beta = Infinity;
+        steps.push({t:'setBeta', v:beta});
+        console.log(child);
+        console.log(scn.leafOrder[child]);
+        const leaves = scn.leafOrder[child];
+        for (let i=0;i<leaves.length;i++) {
+          const leaf = leaves[i];
+          // consider leaf
+          steps.push({t:'edge', from:child, to:leaf});
+          steps.push({t:'visitNode', id:leaf});
+          steps.push({t:'active', id:leaf});
+          steps.push({t:'inc', id:'leavesEval'});
+          leavesVisited++;
+
+          const val = values[leaf];
+          if (val < beta) {
+            beta = val; steps.push({t:'setBeta', v:beta});
+          }
+          // Check cutoff at MIN: if beta <= alpha, prune remaining leaves under this MIN
+          if (beta <= alpha) {
+            const remaining = leaves.slice(i+1);
+            remaining.forEach(rest => {
+              steps.push({t:'pruneEdge', from:child, to:rest});
+              steps.push({t:'pruneNode', id:rest});
+            });
+            if (remaining.length>0) steps.push({t:'addBy', id:'leavesPruned', k: remaining.length});
+            leavesPruned += remaining.length;
+            break;
+          }
+        }
+
+        // Finish MIN child, update root alpha
+        if (beta > alpha) alpha = beta;
+        steps.push({t:'setAlpha', v:alpha});
+      });
+
+      // Finish root
+      steps.push({t:'setBeta', v:Infinity});
+      steps.push({t:'setRoot', v:alpha});
+      steps.push({t:'setInternal', v:internalVisited});
+      return steps;
+    }
+
+    // ----- Runner -----
+    let currentScenario = scenarios.best;
+    let steps = planSteps(currentScenario);
+    let idx = 0; let timer = null; let playing = false;
+
+    function applyStep(s) {
+      switch(s.t) {
+        case 'visitNode': markVisited(s.id); break;
+        case 'active': markActive(s.id); break;
+        case 'edge': visitEdge(s.from, s.to); break;
+        case 'pruneEdge': pruneEdge(s.from, s.to); break;
+        case 'pruneNode': pruneNode(s.id); break;
+        case 'inc': inc(s.id); break;
+        case 'addBy': addBy(s.id, s.k); break;
+        case 'setAlpha': setAlpha(s.v); break;
+        case 'setBeta': setBeta(s.v); break;
+        case 'setRoot': $('#rootValue').textContent = String(s.v); break;
+        case 'setInternal': $('#internalVisited').textContent = String(s.v); break;
+      }
+    }
+
+    function stepOnce() {
+      if (idx >= steps.length) { stop(); return; }
+      applyStep(steps[idx++]);
+    }
+
+    function play() {
+      if (playing) return; playing = true;
+      timer = setInterval(()=>{
+        if (idx >= steps.length) { stop(); return; }
+        stepOnce();
+      }, 650);
+    }
+    function stop() { playing=false; if (timer) clearInterval(timer); timer = null; }
+
+    function reset() {
+      stop(); idx = 0; resetVisuals();
+    }
+
+    function loadScenario(key) {
+      currentScenario = scenarios[key];
+      $('#scenarioName').textContent = currentScenario.name;
+      reset();
+      steps = planSteps(currentScenario);
+    }
+
+    // Wire controls
+    $$('.scenario').forEach(btn=>{
+      btn.addEventListener('click', ()=> loadScenario(btn.dataset.s));
+    });
+    $('#run').addEventListener('click', play);
+    $('#step').addEventListener('click', stepOnce);
+    $('#reset').addEventListener('click', reset);
+
+    // initial render
+    reset();
+  </script>
+</body>
+</html>
