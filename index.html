@@ -107,7 +107,7 @@
         <div class="value" id="leavesPruned">0</div>
         <div class="subtle">Internal nodes visited</div>
         <div class="value" id="internalVisited">0</div>
-        <div class="subtle">Root value</div>
+        <div class="subtle">Root value (Best Score)</div>
         <div class="value" id="rootValue">—</div>
       </div>
 
@@ -168,15 +168,15 @@
           <!-- MIN level -->
           <g id="A" class="node" transform="translate(250,200)">
             <circle r="24" />
-            <text text-anchor="middle" dominant-baseline="middle">A_MIN</text>
+            <text text-anchor="middle" dominant-baseline="middle">MIN (3)</text>
           </g>
           <g id="B" class="node" transform="translate(450,200)">
             <circle r="24" />
-            <text text-anchor="middle" dominant-baseline="middle">B_MIN</text>
+            <text text-anchor="middle" dominant-baseline="middle">MIN (1)</text>
           </g>
           <g id="C" class="node" transform="translate(650,200)">
             <circle r="24" />
-            <text text-anchor="middle" dominant-baseline="middle">C_MIN</text>
+            <text text-anchor="middle" dominant-baseline="middle">MIN (0)</text>
           </g>
 
           <!-- Leaves under A (values 3,5,6) -->
@@ -417,7 +417,7 @@
 
       // Finish root
       // steps.push({t:'setBeta', v:Infinity});
-      // steps.push({t:'setRoot', v:alpha});
+      steps.push({t:'setRoot', v:alpha});
       steps.push({t:'setInternal', v:internalVisited});
       return steps;
     }
