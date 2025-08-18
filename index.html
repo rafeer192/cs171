@@ -68,6 +68,8 @@
 
     .subtle { color: var(--muted); font-size: 13px; }
     .alpha, .beta { font-size: 12px; color: var(--muted); }
+    .rootalpha, .rootbeta { font-size: 12px; color: var(--muted); }
+    .rootbeta {padding-bottom: 12px;}
 
     .footer { padding: 10px 18px 26px; color: var(--muted); font-size: 12px; text-align: center; }
 
@@ -120,8 +122,10 @@
 
       <div>
         <div class="subtle" style="margin:10px 0 6px">Current α / β</div>
-        <div class="alpha">α (root / MAX): <span id="alpha">-∞</span></div>
-        <div class="beta">β (current MIN): <span id="beta">+∞</span></div>
+        <div class="rootalpha">α (root): <span id="rootalpha">-∞</span></div>
+        <div class="rootbeta">β (root): <span id="rootbeta">+∞</span></div>
+        <div class="alpha">α (current MIN node): <span id="alpha">-∞</span></div>
+        <div class="beta">β (current MIN node): <span id="beta">+∞</span></div>
       </div>
 
       <div>
@@ -273,7 +277,7 @@
         const c1 = document.getElementById("C1-text");
         const c2 = document.getElementById("C2-text");
         const c3 = document.getElementById("C3-text");
-        
+        const footer = document.querySelector(".footer");
         if(type === 'best') {
             a1.innerHTML = '3';
             a2.innerHTML = '5'; 
@@ -284,6 +288,7 @@
             c1.innerHTML = '0';
             c2.innerHTML = '7';
             c3.innerHTML = '8';
+            footer.innerText = "This is the best ordering. What do you notice about the ordering of the leaf nodes? The ordering of the MIN nodes? For the MIN nodes, consider their minimax value.";
         } else if(type === 'random') {
             a1.innerHTML = '5';
             a2.innerHTML = '3'; 
@@ -294,6 +299,7 @@
             c1.innerHTML = '8';
             c2.innerHTML = '7';
             c3.innerHTML = '0';
+            footer.innerText = "This is just a random ordering. Consider the differences between this one and the two extremes to get an idea of what makes them either the best or worst.";
         } else if(type === 'worst') {
             a1.innerHTML = '6';
             a2.innerHTML = '5'; 
@@ -304,6 +310,7 @@
             c1.innerHTML = '8';
             c2.innerHTML = '7';
             c3.innerHTML = '0'; 
+            footer.innerText = "This is the worst ordering. What makes it so different than the best? Look at the leaf node values for an idea.";
         }
     }
 
@@ -333,6 +340,10 @@
     function setAlpha(v) { $('#alpha').textContent = v === -Infinity ? '-∞' : String(v); }
     function setBeta(v) { $('#beta').textContent = v === Infinity ? '+∞' : String(v); }
 
+    function setRootAlpha(v) { 
+      $('#rootalpha').textContent = v === -Infinity ? '-∞' : String(v); 
+    }
+
     function inc(id) { const el=$("#"+id); el.textContent = String( (parseInt(el.textContent)||0) + 1 ); }
     function addBy(id, k) { const el=$("#"+id); el.textContent = String( (parseInt(el.textContent)||0) + k ); }
 
@@ -348,10 +359,11 @@
         values = { A1:6, A2:5, A3:3, B1:9, B2:2, B3:1, C1:8, C2:7, C3:0 };
       }
       const steps = [];
-      // Enter root
-      steps.push({t:'visitNode', id:'R'});
-      steps.push({t:'setAlpha', v:-Infinity});
-      steps.push({t:'setBeta', v:Infinity});
+      // Enter root 
+      steps.push({t:'visitNode', id:'R'}); 
+      steps.push({t:'setRootAlpha', v:-Infinity}); 
+      setRootAlpha(-Infinity);
+      let rootAlpha = -Infinity;
       let alpha = -Infinity;
       let leavesVisited = 0;
       let leavesPruned = 0;
@@ -365,7 +377,9 @@
         steps.push({t:'active', id:child});
         internalVisited++;
         let beta = Infinity;
-        steps.push({t:'setBeta', v:beta});
+        alpha = rootAlpha;
+        steps.push({t: 'setAlpha', v:rootAlpha}); // inherit alpha from its parent
+        steps.push({t:'setBeta', v:beta}); // always starts as infinity
         console.log(child);
         console.log(scn.leafOrder[child]);
         const leaves = scn.leafOrder[child];
@@ -383,6 +397,7 @@
             beta = val; steps.push({t:'setBeta', v:beta});
           }
           // Check cutoff at MIN: if beta <= alpha, prune remaining leaves under this MIN
+          console.log(beta, alpha);
           if (beta <= alpha) {
             const remaining = leaves.slice(i+1);
             remaining.forEach(rest => {
@@ -396,13 +411,13 @@
         }
 
         // Finish MIN child, update root alpha
-        if (beta > alpha) alpha = beta;
-        steps.push({t:'setAlpha', v:alpha});
+        if (beta > rootAlpha) rootAlpha = beta;
+        steps.push({t:'setRootAlpha', v:rootAlpha});
       });
 
       // Finish root
-      steps.push({t:'setBeta', v:Infinity});
-      steps.push({t:'setRoot', v:alpha});
+      // steps.push({t:'setBeta', v:Infinity});
+      // steps.push({t:'setRoot', v:alpha});
       steps.push({t:'setInternal', v:internalVisited});
       return steps;
     }
@@ -425,6 +440,7 @@
         case 'setBeta': setBeta(s.v); break;
         case 'setRoot': $('#rootValue').textContent = String(s.v); break;
         case 'setInternal': $('#internalVisited').textContent = String(s.v); break;
+        case 'setRootAlpha': setRootAlpha(s.v); break;
       }
     }
 
